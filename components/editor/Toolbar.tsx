@@ -1,15 +1,24 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { FiUpload, FiDownload, FiRotateCcw, FiRotateCw, FiMusic } from "react-icons/fi";
+import { FiUpload, FiDownload, FiRotateCcw, FiRotateCw, FiMusic, FiMessageSquare } from "react-icons/fi";
 import { useEditorStore } from "@/lib/stores/editorStore";
 import { ExportModal } from "../features/ExportModal";
+import { generateCaptionsFromFile } from "@/lib/captions/generateCaptions";
+
+const createId = () => {
+	if (typeof crypto !== "undefined" && crypto.randomUUID) {
+		return crypto.randomUUID();
+	}
+	return Math.random().toString(36).slice(2);
+};
 
 export function Toolbar() {
 	const videoInputRef = useRef<HTMLInputElement>(null);
 	const audioInputRef = useRef<HTMLInputElement>(null);
 	const [showExportModal, setShowExportModal] = useState(false);
-	const { addVideoClip, addAudioTrack, videoClips } = useEditorStore();
+	const [isCaptioning, setIsCaptioning] = useState(false);
+	const { addVideoClip, addAudioTrack, videoClips, audioTracks } = useEditorStore();
 
 	const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 		const files = e.target.files;
@@ -27,7 +36,7 @@ export function Toolbar() {
 		});
 
 		const clip = {
-			id: crypto.randomUUID(),
+			id: createId(),
 			file,
 			url,
 			duration: video.duration,
@@ -60,7 +69,7 @@ export function Toolbar() {
 		});
 
 		const track = {
-			id: crypto.randomUUID(),
+			id: createId(),
 			file,
 			url,
 			duration: audio.duration,
@@ -71,6 +80,30 @@ export function Toolbar() {
 
 		addAudioTrack(track);
 		e.target.value = ""; // Reset input
+	};
+
+	const handleGenerateCaptions = async () => {
+		if (isCaptioning) return;
+
+		const source = audioTracks[0]?.file ?? videoClips[0]?.file;
+		if (!source) {
+			window.alert("Import a video or audio track before generating captions.");
+			return;
+		}
+
+		setIsCaptioning(true);
+		try {
+			const { captions, removeCaption } = useEditorStore.getState();
+			for (const caption of captions) {
+				removeCaption(caption.id);
+			}
+			await generateCaptionsFromFile(source);
+		} catch (error) {
+			console.error("Caption generation failed", error);
+			window.alert("Could not generate captions. Please try again after reloading the page.");
+		} finally {
+			setIsCaptioning(false);
+		}
 	};
 
 	return (
@@ -96,6 +129,15 @@ export function Toolbar() {
 				>
 					<FiMusic size={16} />
 					<span>Audio</span>
+				</button>
+
+				<button
+					onClick={handleGenerateCaptions}
+					disabled={isCaptioning || (audioTracks.length === 0 && videoClips.length === 0)}
+					className="px-3 py-2 bg-cream/10 hover:bg-cream/20 text-cream rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+				>
+					<FiMessageSquare size={16} />
+					<span>{isCaptioning ? "Captioning..." : "Auto Captions"}</span>
 				</button>
 
 				<input
