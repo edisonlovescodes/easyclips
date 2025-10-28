@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
 	DndContext,
 	DragEndEvent,
@@ -80,6 +80,8 @@ export function Timeline() {
 		updateVideoClip,
 		removeAudioTrack,
 		splitVideoClip,
+		selectedClipId,
+		setSelectedClip,
 	} = useEditorStore();
 
 	const contentDuration = Math.max(
@@ -178,6 +180,7 @@ export function Timeline() {
 		const rect = event.currentTarget.getBoundingClientRect();
 		const x = event.clientX - rect.left + (event.currentTarget.scrollLeft || 0);
 		setCurrentTime(clampTime(x));
+		setSelectedClip(null);
 	};
 
 	const handlePlayheadDrag = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -222,43 +225,47 @@ export function Timeline() {
 		return 2;
 	};
 
-	const adjustZoom = (direction: "in" | "out") => {
-		const timeline = timelineRef.current;
+	const adjustZoom = useCallback(
+		(direction: "in" | "out") => {
+			const timeline = timelineRef.current;
 
-		setZoom((prev) => {
-			const step = getZoomStep(prev);
-			const delta = direction === "in" ? step : -step;
-			const next = clampZoom(prev + delta);
+			setZoom((prev) => {
+				const step = getZoomStep(prev);
+				const delta = direction === "in" ? step : -step;
+				const next = clampZoom(prev + delta);
 
-			if (timeline) {
-				const nextIsZoomedOut = next <= 20;
-				const nextTimelineDuration = nextIsZoomedOut
-					? Math.max(projectedDuration, MAX_TIMELINE_DURATION)
-					: projectedDuration;
-				const targetScroll =
-					currentTime * next - timeline.clientWidth / 2;
-				const maxScroll = Math.max(
-					0,
-					nextTimelineDuration * next - timeline.clientWidth,
-				);
-				const clampedScroll = Math.max(
-					0,
-					Math.min(targetScroll, maxScroll),
-				);
-				requestAnimationFrame(() => {
-					timeline.scrollLeft = clampedScroll;
-				});
-			}
+				if (timeline) {
+					const nextIsZoomedOut = next <= 20;
+					const nextTimelineDuration = nextIsZoomedOut
+						? Math.max(projectedDuration, MAX_TIMELINE_DURATION)
+						: projectedDuration;
+					const targetScroll =
+						currentTime * next - timeline.clientWidth / 2;
+					const maxScroll = Math.max(
+						0,
+						nextTimelineDuration * next - timeline.clientWidth,
+					);
+					const clampedScroll = Math.max(
+						0,
+						Math.min(targetScroll, maxScroll),
+					);
+					requestAnimationFrame(() => {
+						timeline.scrollLeft = clampedScroll;
+					});
+				}
 
-			return next;
-		});
-	};
+				return next;
+			});
+		},
+		[currentTime, projectedDuration],
+	);
 
 	const zoomIn = () => adjustZoom("in");
 	const zoomOut = () => adjustZoom("out");
 
 	const handleTrimClip = (clipId: string, updates: Partial<VideoClip>) => {
 		updateVideoClip(clipId, updates);
+		setSelectedClip(clipId);
 	};
 
 	const handleSplitClip = (clip: VideoClip) => {
@@ -281,6 +288,52 @@ export function Timeline() {
 			currentTime < clipEnd - MIN_CLIP_SEGMENT
 		);
 	};
+
+	const removeSelectedClip = useCallback(() => {
+		if (!selectedClipId) return;
+		removeVideoClip(selectedClipId);
+		setSelectedClip(null);
+	}, [removeVideoClip, selectedClipId, setSelectedClip]);
+
+	const handleGlobalKeyDown = useCallback(
+		(event: KeyboardEvent) => {
+			const target = event.target as HTMLElement | null;
+			if (
+				target &&
+				(target.tagName === "INPUT" ||
+					target.tagName === "TEXTAREA" ||
+					target.isContentEditable)
+			) {
+				return;
+			}
+
+			if (event.key === "Delete" || event.key === "Backspace") {
+				if (selectedClipId) {
+					event.preventDefault();
+					removeSelectedClip();
+				}
+			}
+
+			if (event.key === "+" || event.key === "=") {
+				event.preventDefault();
+				adjustZoom("in");
+			}
+
+			if (event.key === "-") {
+				event.preventDefault();
+				adjustZoom("out");
+			}
+		},
+		[adjustZoom, removeSelectedClip, selectedClipId],
+	);
+
+	useEffect(() => {
+		const listener = (event: KeyboardEvent) => handleGlobalKeyDown(event);
+		document.addEventListener("keydown", listener);
+		return () => {
+			document.removeEventListener("keydown", listener);
+		};
+	}, [handleGlobalKeyDown]);
 
 	const generateTimeMarkers = () => {
 		const ticks: number[] = [];
@@ -497,6 +550,8 @@ export function Timeline() {
 											onTrim={handleTrimClip}
 											onSplit={() => handleSplitClip(clip)}
 											canSplit={canSplitClip(clip)}
+											isSelected={selectedClipId === clip.id}
+											onSelect={setSelectedClip}
 										/>
 									))}
 								</SortableContext>

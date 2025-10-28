@@ -12,6 +12,8 @@ interface ClipItemProps {
 	onTrim: (clipId: string, updates: Partial<VideoClip>) => void;
 	onSplit: () => void;
 	canSplit: boolean;
+	isSelected: boolean;
+	onSelect: (clipId: string | null) => void;
 }
 
 const MIN_CLIP_DURATION = 0.1;
@@ -23,6 +25,8 @@ export function ClipItem({
 	onTrim,
 	onSplit,
 	canSplit,
+	isSelected,
+	onSelect,
 }: ClipItemProps) {
 	const {
 		attributes,
@@ -81,11 +85,29 @@ export function ClipItem({
 		<div
 			ref={setNodeRef}
 			style={style}
-			className={`absolute top-6 h-10 bg-accent rounded-md border border-accent/50 overflow-hidden group cursor-move select-none ${
-				isDragging ? "opacity-50 z-50" : "z-10"
+			onMouseDown={(event) => {
+				event.stopPropagation();
+				onSelect(clip.id);
+			}}
+			onDoubleClick={() => {
+				if (canSplit) onSplit();
+			}}
+			className={`absolute top-6 h-10 rounded-md border overflow-hidden group cursor-move select-none transition-shadow ${
+				isDragging
+					? "opacity-50 z-50"
+					: isSelected
+						? "z-20 ring-2 ring-white border-white shadow-lg bg-accent"
+						: "z-10 border-accent/50 bg-accent"
 			}`}
 			{...attributes}
 			{...listeners}
+			tabIndex={0}
+			onKeyDown={(event) => {
+				if (event.key === "Enter" || event.key === " ") {
+					event.preventDefault();
+					onSelect(clip.id);
+				}
+			}}
 		>
 			<div className="px-2 py-1 text-white text-xs truncate flex items-center justify-between h-full gap-2">
 				<div className="truncate flex-1">

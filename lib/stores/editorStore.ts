@@ -41,6 +41,13 @@ export interface Caption {
 	fontSize: number;
 }
 
+export type CaptionStatus =
+	| { stage: "idle"; message?: string }
+	| { stage: "loading-model"; message?: string }
+	| { stage: "transcribing"; message?: string }
+	| { stage: "success"; message?: string }
+	| { stage: "error"; message: string };
+
 export interface EditorState {
 	// Video clips
 	videoClips: VideoClip[];
@@ -48,6 +55,8 @@ export interface EditorState {
 	removeVideoClip: (id: string) => void;
 	updateVideoClip: (id: string, updates: Partial<VideoClip>) => void;
 	splitVideoClip: (id: string, splitTime: number) => void;
+	selectedClipId: string | null;
+	setSelectedClip: (id: string | null) => void;
 
 	// Audio tracks
 	audioTracks: AudioTrack[];
@@ -80,6 +89,10 @@ export interface EditorState {
 	setIsExporting: (exporting: boolean) => void;
 	setExportProgress: (progress: number) => void;
 
+	// Captions
+	captionStatus: CaptionStatus;
+	setCaptionStatus: (status: CaptionStatus) => void;
+
 	// Reset
 	reset: () => void;
 }
@@ -95,6 +108,8 @@ const initialState = {
 	aspectRatio: "16:9" as const,
 	isExporting: false,
 	exportProgress: 0,
+	selectedClipId: null as string | null,
+	captionStatus: { stage: "idle" } as CaptionStatus,
 };
 
 export const useEditorStore = create<EditorState>((set) => ({
@@ -106,10 +121,12 @@ export const useEditorStore = create<EditorState>((set) => ({
 			videoClips: [...state.videoClips, clip].sort(
 				(a, b) => a.position - b.position,
 			),
+			selectedClipId: clip.id,
 		})),
 	removeVideoClip: (id) =>
 		set((state) => ({
 			videoClips: state.videoClips.filter((c) => c.id !== id),
+			selectedClipId: state.selectedClipId === id ? null : state.selectedClipId,
 		})),
 	updateVideoClip: (id, updates) =>
 		set((state) => ({
@@ -152,8 +169,11 @@ export const useEditorStore = create<EditorState>((set) => ({
 
 			return {
 				videoClips: nextClips,
+				selectedClipId: rightClip.id,
 			};
 		}),
+	selectedClipId: null,
+	setSelectedClip: (id) => set({ selectedClipId: id }),
 
 	// Audio tracks
 	addAudioTrack: (track) =>
@@ -207,6 +227,10 @@ export const useEditorStore = create<EditorState>((set) => ({
 	// Export
 	setIsExporting: (exporting) => set({ isExporting: exporting }),
 	setExportProgress: (progress) => set({ exportProgress: progress }),
+
+	// Captions
+	captionStatus: { stage: "idle" },
+	setCaptionStatus: (status) => set({ captionStatus: status }),
 
 	// Reset
 	reset: () => set(initialState),

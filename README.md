@@ -32,11 +32,13 @@ The fields are already referenced by `/lib/whop-sdk.ts`.
 
 | Action | Shortcut / Control |
 | --- | --- |
-| Zoom in/out | `+` / `–` buttons in the header (auto-adjusted step size) |
+| Zoom in/out | `+` / `–` buttons or keyboard (`Shift + =` / `-`) — zoom keeps the playhead centred |
 | Pan | Horizontal scroll / trackpad swipe |
 | Scrub playhead | Click the ruler or drag the accent handle (range: 0 – 2 hours when zoomed out) |
 | Add marker | “Markers (n)” button while at the desired timestamp |
 | Switch tracks | Video / Audio / Captions toggle in the timeline header |
+| Resize timeline | Drag the horizontal divider between the canvas and tracks (Premiere-style) |
+| Select / delete clip | Click a clip to highlight, press `Delete` / `Backspace` to remove |
 
 The zoom label shows how many pixels represent one second so you can gauge precision quickly.
 
@@ -102,3 +104,13 @@ Premiere Pro’s timeline panel offers a few ergonomics we intentionally mirrore
 - **Adjustable track height** – Editors can drag the horizontal dividers in Premiere to enlarge video, audio, or caption lanes. Each Easy Clips track now exposes a grab handle with min/max heights to match that behavior.
 - **Razor/trim tools** – Premiere lets you split a clip at the playhead and drag in/out points. Easy Clips adds a “Split” action (when the playhead is inside a clip) plus live trim handles that respect source bounds, mimicking the ripple and extend gestures.
 - **Markers & captions** – Named markers hover above the CTI in Premiere for navigation. Our markers adopt the same on-ruler styling and count display while captions stay on a dedicated track just like the Essential Graphics workflow.
+
+## Open-source inspiration
+
+We audited a handful of OSS video editors to ground Easy Clips’ UX:
+
+- **Remotion** ([github.com/remotion-dev/remotion](https://github.com/remotion-dev/remotion)) for React-first timeline patterns and keyboard shortcuts.
+- **OpenVideoEditor** ([github.com/mifi/editly](https://github.com/mifi/editly)) for clip trimming/splitting semantics and FFmpeg orchestration.
+- **Olive Video Editor** ([olivevideoeditor.org](https://www.olivevideoeditor.org/)) for track resizing and marker organisation.
+
+Easy Clips adapts the same interaction playbook while keeping everything client-side and free to run.

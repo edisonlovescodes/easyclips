@@ -52,44 +52,70 @@ const toSeconds = (value: number | string | undefined) => {
 };
 
 export async function generateCaptionsFromFile(file: File) {
-	const pipeline = await loadPipeline();
+	const { setCaptionStatus } = useEditorStore.getState();
 
-	const result = await pipeline(file, {
-		chunk_length_s: 30,
-		stride_length_s: 5,
-		return_timestamps: true,
-	});
+	try {
+		setCaptionStatus({
+			stage: "loading-model",
+			message: "Loading Whisper small (≈100MB) — first run may take a minute.",
+		});
 
-	const { addCaption } = useEditorStore.getState();
+		const pipeline = await loadPipeline();
 
-	const chunks = result.chunks ?? [];
+		setCaptionStatus({
+			stage: "transcribing",
+			message: "Transcribing audio to captions…",
+		});
 
-	for (const chunk of chunks) {
-		const [start, end] = chunk.timestamp ?? [undefined, undefined];
-		const startSeconds = toSeconds(start);
-		const endSeconds = toSeconds(end);
+		const result = await pipeline(file, {
+			chunk_length_s: 30,
+			stride_length_s: 5,
+			return_timestamps: true,
+		});
 
-		if (
-			typeof startSeconds !== "number" ||
-			typeof endSeconds !== "number" ||
-			!Number.isFinite(startSeconds) ||
-			!Number.isFinite(endSeconds)
-		) {
-			continue;
+		const { addCaption } = useEditorStore.getState();
+
+		const chunks = result.chunks ?? [];
+
+		for (const chunk of chunks) {
+			const [start, end] = chunk.timestamp ?? [undefined, undefined];
+			const startSeconds = toSeconds(start);
+			const endSeconds = toSeconds(end);
+
+			if (
+				typeof startSeconds !== "number" ||
+				typeof endSeconds !== "number" ||
+				!Number.isFinite(startSeconds) ||
+				!Number.isFinite(endSeconds)
+			) {
+				continue;
+			}
+
+			const text = chunk.text?.trim();
+			if (!text) continue;
+
+			addCaption({
+				id: createId(),
+				text,
+				startTime: startSeconds,
+				endTime: endSeconds,
+				style: "default",
+				position: "bottom",
+				color: "#ffffff",
+				fontSize: 16,
+			});
 		}
 
-		const text = chunk.text?.trim();
-		if (!text) continue;
-
-		addCaption({
-			id: createId(),
-			text,
-			startTime: startSeconds,
-			endTime: endSeconds,
-			style: "default",
-			position: "bottom",
-			color: "#ffffff",
-			fontSize: 16,
+		setCaptionStatus({
+			stage: "success",
+			message: "Captions generated from audio.",
 		});
+	} catch (error) {
+		console.error("Whisper captioning failed", error);
+		setCaptionStatus({
+			stage: "error",
+			message: "Caption generation failed. Check console for details.",
+		});
+		throw error;
 	}
 }
