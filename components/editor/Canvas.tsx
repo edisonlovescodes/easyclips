@@ -79,26 +79,32 @@ export function Canvas() {
 		0
 	);
 
+	const aspectRatioStyle =
+		canvasWidth && canvasHeight
+			? { aspectRatio: `${canvasWidth} / ${canvasHeight}` }
+			: { aspectRatio: "16 / 9" };
+
 	return (
 		<div className="flex-1 flex flex-col items-center justify-center bg-dark/5 p-4">
 			{/* Canvas/Video Preview */}
-			<div className="relative bg-black rounded-lg overflow-hidden shadow-2xl max-w-4xl max-h-full">
+			<div
+				className="relative bg-dark rounded-xl overflow-hidden shadow-2xl max-w-4xl w-full"
+				style={aspectRatioStyle}
+			>
 				{videoClips.length === 0 ? (
-					<div className="w-[640px] h-[360px] flex items-center justify-center text-dark/40">
+					<div className="absolute inset-0 flex items-center justify-center text-cream/60">
 						<div className="text-center">
-							<p className="text-lg mb-2">No video loaded</p>
-							<p className="text-sm">Click "Import" to add a video</p>
+							<p className="text-lg font-semibold uppercase tracking-wide mb-2">
+								No video loaded
+							</p>
+							<p className="text-sm">Click “Import” to add a video</p>
 						</div>
 					</div>
 				) : (
 					<>
 						<video
 							ref={videoRef}
-							className="w-full h-full"
-							style={{
-								maxWidth: "100%",
-								maxHeight: "calc(100vh - 400px)",
-							}}
+							className="absolute inset-0 w-full h-full object-contain bg-black transition-all duration-300"
 						/>
 						<canvas
 							ref={canvasRef}

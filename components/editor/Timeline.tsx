@@ -22,13 +22,40 @@ import { useEditorStore } from "@/lib/stores/editorStore";
 import { ClipItem } from "./ClipItem";
 import { AspectRatioModal } from "../features/AspectRatioModal";
 
+const MIN_TIMELINE_DURATION = 10;
+const MAX_TIMELINE_DURATION = 60 * 60 * 2; // 2 hours
+const MIN_ZOOM = 2;
+const MAX_ZOOM = 240;
+const DEFAULT_ZOOM = 24;
+
+const getPrimaryInterval = (pixelsPerSecond: number) => {
+	if (pixelsPerSecond <= 3) return 600; // 10 min
+	if (pixelsPerSecond <= 6) return 300; // 5 min
+	if (pixelsPerSecond <= 10) return 180; // 3 min
+	if (pixelsPerSecond <= 18) return 120; // 2 min
+	if (pixelsPerSecond <= 30) return 60; // 1 min
+	if (pixelsPerSecond <= 60) return 30; // 30 sec
+	if (pixelsPerSecond <= 120) return 10; // 10 sec
+	if (pixelsPerSecond <= 180) return 5; // 5 sec
+	if (pixelsPerSecond <= 200) return 2; // 2 sec
+	return 1; // 1 sec
+};
+
+const getSubInterval = (primaryInterval: number) => {
+	if (primaryInterval >= 300) return primaryInterval / 5;
+	if (primaryInterval >= 60) return primaryInterval / 6;
+	if (primaryInterval >= 10) return primaryInterval / 5;
+	if (primaryInterval >= 2) return primaryInterval / 4;
+	return primaryInterval / 2;
+};
+
 export function Timeline() {
 	const timelineRef = useRef<HTMLDivElement>(null);
 	const [showAspectRatioModal, setShowAspectRatioModal] = useState(false);
 	const [activeTab, setActiveTab] = useState<"video" | "audio" | "captions">(
 		"video",
 	);
-	const [zoom, setZoom] = useState(50); // pixels per second at 100%
+	const [zoom, setZoom] = useState(DEFAULT_ZOOM); // pixels per second
 	const [markers, setMarkers] = useState<
 		{ id: string; time: number; label: string }[]
 	>([]);
@@ -44,8 +71,8 @@ export function Timeline() {
 		removeAudioTrack,
 	} = useEditorStore();
 
-	const totalDuration = Math.max(
-		10,
+	const contentDuration = Math.max(
+		0,
 		videoClips.reduce(
 			(max, clip) => Math.max(max, clip.position + (clip.endTime - clip.startTime)),
 			0,
@@ -56,12 +83,20 @@ export function Timeline() {
 		),
 	);
 
+	const projectedDuration = Math.max(
+		MIN_TIMELINE_DURATION,
+		Math.min(MAX_TIMELINE_DURATION, Math.max(contentDuration, currentTime)),
+	);
+
+	const isZoomedOut = zoom <= 20;
+	const timelineDuration = isZoomedOut
+		? Math.max(projectedDuration, MAX_TIMELINE_DURATION)
+		: projectedDuration;
+
 	const pixelsPerSecond = zoom;
-	const timelineWidth = totalDuration * pixelsPerSecond;
-	const primaryInterval =
-		zoom < 40 ? 10 : zoom < 80 ? 5 : zoom < 120 ? 1 : zoom < 160 ? 0.5 : 0.25;
-	const subInterval =
-		primaryInterval >= 1 ? primaryInterval / 5 : primaryInterval / 2;
+	const timelineWidth = timelineDuration * pixelsPerSecond;
+	const primaryInterval = getPrimaryInterval(pixelsPerSecond);
+	const subInterval = getSubInterval(primaryInterval);
 
 	const sensors = useSensors(
 		useSensor(PointerSensor, {
@@ -85,7 +120,13 @@ export function Timeline() {
 	};
 
 	const clampTime = (pixels: number) =>
-		Math.max(0, Math.min(pixels / pixelsPerSecond, totalDuration));
+		Math.max(
+			0,
+			Math.min(
+				pixels / pixelsPerSecond,
+				isZoomedOut ? MAX_TIMELINE_DURATION : timelineDuration,
+			),
+		);
 
 	const handleTimelineClick = (event: React.MouseEvent<HTMLDivElement>) => {
 		if (
@@ -131,12 +172,20 @@ export function Timeline() {
 		setMarkers((prev) => [...prev, newMarker]);
 	};
 
-	const zoomIn = () => setZoom((prev) => Math.min(200, prev + 10));
-	const zoomOut = () => setZoom((prev) => Math.max(20, prev - 10));
+	const zoomIn = () =>
+		setZoom((prev) => {
+			const step = prev >= 80 ? 20 : prev >= 30 ? 10 : prev >= 12 ? 4 : 2;
+			return Math.min(MAX_ZOOM, prev + step);
+		});
+	const zoomOut = () =>
+		setZoom((prev) => {
+			const step = prev > 80 ? 20 : prev > 30 ? 10 : prev > 12 ? 4 : 2;
+			return Math.max(MIN_ZOOM, prev - step);
+		});
 
 	const generateTimeMarkers = () => {
 		const ticks: number[] = [];
-		const total = Math.ceil(totalDuration / primaryInterval);
+		const total = Math.ceil(timelineDuration / primaryInterval);
 
 		for (let i = 0; i <= total; i += 1) {
 			const time = Number((i * primaryInterval).toFixed(4));
@@ -149,7 +198,7 @@ export function Timeline() {
 	const generateSubTicks = () => {
 		if (!subInterval) return [];
 		const ticks: number[] = [];
-		const total = Math.ceil(totalDuration / subInterval);
+		const total = Math.ceil(timelineDuration / subInterval);
 
 		for (let i = 0; i <= total; i += 1) {
 			const time = Number((i * subInterval).toFixed(4));
@@ -161,10 +210,14 @@ export function Timeline() {
 	};
 
 	const formatTimestamp = (seconds: number) => {
-		const mins = Math.floor(seconds / 60);
+		const hrs = Math.floor(seconds / 3600);
+		const mins = Math.floor((seconds % 3600) / 60);
 		const secs = Math.floor(seconds % 60);
 		const frames = Math.floor((seconds % 1) * 30); // assume 30fps
-		return `${mins.toString().padStart(2, "0")}:${secs
+
+		const hh = hrs > 0 ? `${hrs.toString().padStart(2, "0")}:` : "";
+
+		return `${hh}${mins.toString().padStart(2, "0")}:${secs
 			.toString()
 			.padStart(2, "0")}:${frames.toString().padStart(2, "0")}`;
 	};
@@ -229,8 +282,8 @@ export function Timeline() {
 						>
 							<FiMinus size={14} />
 						</button>
-						<div className="text-xs text-dark/60 font-mono w-12 text-center">
-							{Math.round((zoom / 50) * 100)}%
+						<div className="text-xs text-dark font-mono w-24 text-center bg-cream border border-dark/10 rounded px-2 py-0.5 shadow-sm">
+							1s ≈ {zoom}px
 						</div>
 						<button
 							onClick={zoomIn}
@@ -269,7 +322,7 @@ export function Timeline() {
 				>
 					{/* Time Ruler */}
 					<div
-						className="h-10 bg-dark/5 border-b border-dark/10 relative timeline-clickable"
+						className="h-10 bg-white border-b border-dark/15 relative timeline-clickable shadow-inner"
 						onClick={handleTimelineClick}
 					>
 						{generateTimeMarkers().map((time) => (
@@ -278,7 +331,7 @@ export function Timeline() {
 								className="absolute top-0 h-full flex flex-col justify-between pointer-events-none"
 								style={{ left: `${time * pixelsPerSecond}px` }}
 							>
-								<div className="text-[10px] text-dark/70 font-mono px-1 bg-cream rounded">
+								<div className="text-[10px] text-dark font-mono px-1.5 py-0.5 bg-cream border border-dark/10 rounded shadow-sm">
 									{formatTimestamp(time)}
 								</div>
 								<div className="h-2 border-l border-dark/20" />
@@ -297,26 +350,26 @@ export function Timeline() {
 
 					{/* Playhead */}
 					<div
-						className="absolute top-0 bottom-0 w-0.5 bg-accent z-30 cursor-ew-resize"
-						style={{
-							left: `${currentTime * pixelsPerSecond}px`,
-						}}
-						onMouseDown={handlePlayheadDrag}
-					>
-						<div className="absolute -top-1 -left-2 w-4 h-4 bg-accent rounded-full pointer-events-none" />
-						<div className="absolute top-10 left-0 text-xs bg-accent text-white px-2 py-0.5 rounded font-mono whitespace-nowrap">
-							{formatTimestamp(currentTime)}
+							className="absolute top-0 bottom-0 w-0.5 bg-accent z-30 cursor-ew-resize"
+							style={{
+								left: `${currentTime * pixelsPerSecond}px`,
+							}}
+							onMouseDown={handlePlayheadDrag}
+						>
+							<div className="absolute -top-1 -left-2 w-4 h-4 bg-accent border border-white rounded-full pointer-events-none shadow-sm" />
+							<div className="absolute top-10 -translate-x-1/2 left-1/2 text-xs bg-dark text-cream px-2 py-0.5 rounded font-mono whitespace-nowrap shadow">
+								{formatTimestamp(currentTime)}
+							</div>
 						</div>
-					</div>
 
 					{/* Markers */}
 					{markers.map((marker) => (
 						<div
 							key={marker.id}
-							className="absolute top-10 bottom-0 border-l-2 border-blue-500 z-20 pointer-events-none"
+							className="absolute top-10 bottom-0 border-l-2 border-accent z-20 pointer-events-none"
 							style={{ left: `${marker.time * pixelsPerSecond}px` }}
 						>
-							<div className="absolute -top-10 left-0 bg-blue-500 text-white text-xs px-2 py-0.5 rounded whitespace-nowrap">
+							<div className="absolute -top-12 -translate-x-1/2 left-1/2 bg-dark text-cream text-xs px-2 py-0.5 rounded-lg whitespace-nowrap shadow-md border border-accent/40">
 								{marker.label}
 							</div>
 						</div>
@@ -326,7 +379,7 @@ export function Timeline() {
 					{(activeTab === "video" || activeTab === "captions") && (
 						<DndContext sensors={sensors} onDragEnd={handleDragEnd}>
 							<div
-								className="h-20 bg-dark/5 border-b border-dark/10 relative timeline-clickable"
+								className="h-20 bg-white border-b border-dark/10 relative timeline-clickable"
 								onClick={handleTimelineClick}
 							>
 								<div className="absolute left-2 top-2 text-xs text-dark/60 font-medium flex items-center gap-1 z-20 bg-cream px-2 py-1 rounded">
@@ -351,7 +404,7 @@ export function Timeline() {
 					{/* Audio Track */}
 					{(activeTab === "audio" || activeTab === "video") && (
 						<div
-							className="h-20 bg-dark/5 border-b border-dark/10 relative timeline-clickable"
+							className="h-20 bg-white border-b border-dark/10 relative timeline-clickable"
 							onClick={handleTimelineClick}
 						>
 							<div className="absolute left-2 top-2 text-xs text-dark/60 font-medium flex items-center gap-1 z-20 bg-cream px-2 py-1 rounded">
@@ -388,7 +441,7 @@ export function Timeline() {
 					{/* Captions Track */}
 					{activeTab === "captions" && (
 						<div
-							className="h-16 bg-dark/5 border-b border-dark/10 relative timeline-clickable"
+							className="h-16 bg-white border-b border-dark/10 relative timeline-clickable"
 							onClick={handleTimelineClick}
 						>
 							<div className="absolute left-2 top-2 text-xs text-dark/60 font-medium flex items-center gap-1 z-20 bg-cream px-2 py-1 rounded">

@@ -80,9 +80,11 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
 		} catch (error) {
 			console.error("Export failed:", error);
 			const message =
-				error instanceof Error ? error.message : "Unknown error occurred";
+				error instanceof Error && error.message
+					? error.message
+					: "We couldn't finish the export. Try a shorter clip, ensure your videos are MP4/H.264, then try again.";
 			setExportError(
-				`Export failed: ${message}. Please try again or try a smaller/shorter clip.`,
+				`Export failed: ${message}`,
 			);
 			setExportProgress(0);
 			exportFailed = true;
