@@ -1,5 +1,14 @@
 import { create } from "zustand";
 
+const MIN_CLIP_DURATION = 0.1;
+
+const createId = () => {
+	if (typeof crypto !== "undefined" && crypto.randomUUID) {
+		return crypto.randomUUID();
+	}
+	return Math.random().toString(36).slice(2);
+};
+
 export interface VideoClip {
 	id: string;
 	file: File;
@@ -38,6 +47,7 @@ export interface EditorState {
 	addVideoClip: (clip: VideoClip) => void;
 	removeVideoClip: (id: string) => void;
 	updateVideoClip: (id: string, updates: Partial<VideoClip>) => void;
+	splitVideoClip: (id: string, splitTime: number) => void;
 
 	// Audio tracks
 	audioTracks: AudioTrack[];
@@ -92,7 +102,11 @@ export const useEditorStore = create<EditorState>((set) => ({
 
 	// Video clips
 	addVideoClip: (clip) =>
-		set((state) => ({ videoClips: [...state.videoClips, clip] })),
+		set((state) => ({
+			videoClips: [...state.videoClips, clip].sort(
+				(a, b) => a.position - b.position,
+			),
+		})),
 	removeVideoClip: (id) =>
 		set((state) => ({
 			videoClips: state.videoClips.filter((c) => c.id !== id),
@@ -103,6 +117,43 @@ export const useEditorStore = create<EditorState>((set) => ({
 				c.id === id ? { ...c, ...updates } : c
 			),
 		})),
+	splitVideoClip: (id, splitTime) =>
+		set((state) => {
+			const clipIndex = state.videoClips.findIndex((clip) => clip.id === id);
+			if (clipIndex === -1) return state;
+
+			const clip = state.videoClips[clipIndex];
+			const relativeSplit = splitTime - clip.position;
+			const clipLength = clip.endTime - clip.startTime;
+
+			if (
+				relativeSplit <= MIN_CLIP_DURATION ||
+				relativeSplit >= clipLength - MIN_CLIP_DURATION
+			) {
+				return state;
+			}
+
+			const newStartTime = clip.startTime + relativeSplit;
+
+			const leftClip: VideoClip = {
+				...clip,
+				endTime: newStartTime,
+			};
+
+			const rightClip: VideoClip = {
+				...clip,
+				id: createId(),
+				startTime: newStartTime,
+				position: clip.position + relativeSplit,
+			};
+
+			const nextClips = [...state.videoClips];
+			nextClips.splice(clipIndex, 1, leftClip, rightClip);
+
+			return {
+				videoClips: nextClips,
+			};
+		}),
 
 	// Audio tracks
 	addAudioTrack: (track) =>

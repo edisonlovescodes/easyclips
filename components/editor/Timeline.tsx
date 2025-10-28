@@ -19,6 +19,7 @@ import {
 	FiBookmark,
 } from "react-icons/fi";
 import { useEditorStore } from "@/lib/stores/editorStore";
+import type { VideoClip } from "@/lib/stores/editorStore";
 import { ClipItem } from "./ClipItem";
 import { AspectRatioModal } from "../features/AspectRatioModal";
 
@@ -27,6 +28,10 @@ const MAX_TIMELINE_DURATION = 60 * 60 * 2; // 2 hours
 const MIN_ZOOM = 2;
 const MAX_ZOOM = 240;
 const DEFAULT_ZOOM = 24;
+const TRACK_MIN_HEIGHT = 64;
+const TRACK_MAX_HEIGHT = 260;
+const MIN_CLIP_SEGMENT = 0.1;
+type TrackKey = "video" | "audio" | "captions";
 
 const getPrimaryInterval = (pixelsPerSecond: number) => {
 	if (pixelsPerSecond <= 3) return 600; // 10 min
@@ -59,6 +64,11 @@ export function Timeline() {
 	const [markers, setMarkers] = useState<
 		{ id: string; time: number; label: string }[]
 	>([]);
+	const [trackHeights, setTrackHeights] = useState<Record<TrackKey, number>>({
+		video: 128,
+		audio: 100,
+		captions: 80,
+	});
 
 	const {
 		videoClips,
@@ -69,6 +79,7 @@ export function Timeline() {
 		removeVideoClip,
 		updateVideoClip,
 		removeAudioTrack,
+		splitVideoClip,
 	} = useEditorStore();
 
 	const contentDuration = Math.max(
@@ -118,6 +129,34 @@ export function Timeline() {
 
 		updateVideoClip(clipId, { position: newPosition });
 	};
+
+	const beginTrackResize =
+		(track: TrackKey) => (event: React.MouseEvent<HTMLDivElement>) => {
+			event.stopPropagation();
+			event.preventDefault();
+
+			const startY = event.clientY;
+			const initialHeight = trackHeights[track];
+
+			const handleMouseMove = (moveEvent: MouseEvent) => {
+				const delta = moveEvent.clientY - startY;
+				const nextHeight = Math.max(
+					TRACK_MIN_HEIGHT,
+					Math.min(TRACK_MAX_HEIGHT, initialHeight + delta),
+				);
+				setTrackHeights((prev) =>
+					prev[track] === nextHeight ? prev : { ...prev, [track]: nextHeight },
+				);
+			};
+
+			const handleMouseUp = () => {
+				document.removeEventListener("mousemove", handleMouseMove);
+				document.removeEventListener("mouseup", handleMouseUp);
+			};
+
+			document.addEventListener("mousemove", handleMouseMove);
+			document.addEventListener("mouseup", handleMouseUp);
+		};
 
 	const clampTime = (pixels: number) =>
 		Math.max(
@@ -172,16 +211,76 @@ export function Timeline() {
 		setMarkers((prev) => [...prev, newMarker]);
 	};
 
-	const zoomIn = () =>
+	const clampZoom = (value: number) =>
+		Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+
+	const getZoomStep = (value: number) => {
+		if (value >= 120) return 30;
+		if (value >= 80) return 20;
+		if (value >= 30) return 10;
+		if (value >= 12) return 4;
+		return 2;
+	};
+
+	const adjustZoom = (direction: "in" | "out") => {
+		const timeline = timelineRef.current;
+
 		setZoom((prev) => {
-			const step = prev >= 80 ? 20 : prev >= 30 ? 10 : prev >= 12 ? 4 : 2;
-			return Math.min(MAX_ZOOM, prev + step);
+			const step = getZoomStep(prev);
+			const delta = direction === "in" ? step : -step;
+			const next = clampZoom(prev + delta);
+
+			if (timeline) {
+				const nextIsZoomedOut = next <= 20;
+				const nextTimelineDuration = nextIsZoomedOut
+					? Math.max(projectedDuration, MAX_TIMELINE_DURATION)
+					: projectedDuration;
+				const targetScroll =
+					currentTime * next - timeline.clientWidth / 2;
+				const maxScroll = Math.max(
+					0,
+					nextTimelineDuration * next - timeline.clientWidth,
+				);
+				const clampedScroll = Math.max(
+					0,
+					Math.min(targetScroll, maxScroll),
+				);
+				requestAnimationFrame(() => {
+					timeline.scrollLeft = clampedScroll;
+				});
+			}
+
+			return next;
 		});
-	const zoomOut = () =>
-		setZoom((prev) => {
-			const step = prev > 80 ? 20 : prev > 30 ? 10 : prev > 12 ? 4 : 2;
-			return Math.max(MIN_ZOOM, prev - step);
-		});
+	};
+
+	const zoomIn = () => adjustZoom("in");
+	const zoomOut = () => adjustZoom("out");
+
+	const handleTrimClip = (clipId: string, updates: Partial<VideoClip>) => {
+		updateVideoClip(clipId, updates);
+	};
+
+	const handleSplitClip = (clip: VideoClip) => {
+		const clipStart = clip.position;
+		const clipEnd = clip.position + (clip.endTime - clip.startTime);
+		if (
+			currentTime <= clipStart + MIN_CLIP_SEGMENT ||
+			currentTime >= clipEnd - MIN_CLIP_SEGMENT
+		) {
+			return;
+		}
+		splitVideoClip(clip.id, currentTime);
+	};
+
+	const canSplitClip = (clip: VideoClip) => {
+		const clipStart = clip.position;
+		const clipEnd = clip.position + (clip.endTime - clip.startTime);
+		return (
+			currentTime > clipStart + MIN_CLIP_SEGMENT &&
+			currentTime < clipEnd - MIN_CLIP_SEGMENT
+		);
+	};
 
 	const generateTimeMarkers = () => {
 		const ticks: number[] = [];
@@ -379,7 +478,8 @@ export function Timeline() {
 					{(activeTab === "video" || activeTab === "captions") && (
 						<DndContext sensors={sensors} onDragEnd={handleDragEnd}>
 							<div
-								className="h-20 bg-white border-b border-dark/10 relative timeline-clickable"
+								className="bg-white border-b border-dark/10 relative timeline-clickable rounded-t-lg"
+								style={{ height: `${trackHeights.video}px` }}
 								onClick={handleTimelineClick}
 							>
 								<div className="absolute left-2 top-2 text-xs text-dark/60 font-medium flex items-center gap-1 z-20 bg-cream px-2 py-1 rounded">
@@ -394,9 +494,17 @@ export function Timeline() {
 											clip={clip}
 											pixelsPerSecond={pixelsPerSecond}
 											onDelete={() => removeVideoClip(clip.id)}
+											onTrim={handleTrimClip}
+											onSplit={() => handleSplitClip(clip)}
+											canSplit={canSplitClip(clip)}
 										/>
 									))}
 								</SortableContext>
+
+								<div
+									onMouseDown={beginTrackResize("video")}
+									className="absolute bottom-0 left-0 right-0 h-2 cursor-row-resize bg-accent/0 hover:bg-accent/20 transition-colors"
+								/>
 							</div>
 						</DndContext>
 					)}
@@ -404,7 +512,8 @@ export function Timeline() {
 					{/* Audio Track */}
 					{(activeTab === "audio" || activeTab === "video") && (
 						<div
-							className="h-20 bg-white border-b border-dark/10 relative timeline-clickable"
+							className="bg-white border-b border-dark/10 relative timeline-clickable"
+							style={{ height: `${trackHeights.audio}px` }}
 							onClick={handleTimelineClick}
 						>
 							<div className="absolute left-2 top-2 text-xs text-dark/60 font-medium flex items-center gap-1 z-20 bg-cream px-2 py-1 rounded">
@@ -435,13 +544,19 @@ export function Timeline() {
 									</div>
 								</div>
 							))}
+
+							<div
+								onMouseDown={beginTrackResize("audio")}
+								className="absolute bottom-0 left-0 right-0 h-2 cursor-row-resize bg-accent/0 hover:bg-accent/20 transition-colors"
+							/>
 						</div>
 					)}
 
 					{/* Captions Track */}
 					{activeTab === "captions" && (
 						<div
-							className="h-16 bg-white border-b border-dark/10 relative timeline-clickable"
+							className="bg-white border-b border-dark/10 relative timeline-clickable rounded-b-lg"
+							style={{ height: `${trackHeights.captions}px` }}
 							onClick={handleTimelineClick}
 						>
 							<div className="absolute left-2 top-2 text-xs text-dark/60 font-medium flex items-center gap-1 z-20 bg-cream px-2 py-1 rounded">
@@ -463,6 +578,11 @@ export function Timeline() {
 									</div>
 								</div>
 							))}
+
+							<div
+								onMouseDown={beginTrackResize("captions")}
+								className="absolute bottom-0 left-0 right-0 h-2 cursor-row-resize bg-accent/0 hover:bg-accent/20 transition-colors"
+							/>
 						</div>
 					)}
 				</div>

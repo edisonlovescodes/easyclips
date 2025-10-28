@@ -62,6 +62,17 @@ export async function generateCaptionsFromAudio(file: File) {
 
 You can trigger it from a toolbar button or background task once uploads finish.
 
+### Whisper workflow reference
+
+The repository already contains a production-ready Whisper pipeline inside `youtube-transcript-project/audio_to_video_with_subs.py`. That Python script shows the full lifecycle:
+
+- Loading an OpenAI Whisper model (`whisper.load_model(model_size)`)
+- Transcribing audio to structured segments (`transcribe_audio_with_whisper`)
+- Serialising captions into SRT/ASS formats (functions `build_srt` and `build_ass`)
+- Merging subtitles back into FFmpeg exports
+
+A browser-friendly port can mirror those steps by swapping the Python calls for `@xenova/transformers`’s Whisper WASM model and emitting Easy Clips caption objects instead of SRT files.
+
 ## Export Notes
 
 - Supported inputs: MP4/H.264 video and AAC/MP3 audio.
@@ -82,3 +93,12 @@ You can trigger it from a toolbar button or background task once uploads finish.
 - Accent: `#FA4616`
 
 Timeline markers, headers, and floating labels are styled with higher contrast variants of these colors to stay readable on light backgrounds.
+
+## Premiere Pro layout parity
+
+Premiere Pro’s timeline panel offers a few ergonomics we intentionally mirrored:
+
+- **Zoom to playhead** – The `+` / `–` controls in Premiere keep the CTI centered while scaling; Easy Clips now performs the same scroll adjustment during every zoom step.
+- **Adjustable track height** – Editors can drag the horizontal dividers in Premiere to enlarge video, audio, or caption lanes. Each Easy Clips track now exposes a grab handle with min/max heights to match that behavior.
+- **Razor/trim tools** – Premiere lets you split a clip at the playhead and drag in/out points. Easy Clips adds a “Split” action (when the playhead is inside a clip) plus live trim handles that respect source bounds, mimicking the ripple and extend gestures.
+- **Markers & captions** – Named markers hover above the CTI in Premiere for navigation. Our markers adopt the same on-ruler styling and count display while captions stay on a dedicated track just like the Essential Graphics workflow.
