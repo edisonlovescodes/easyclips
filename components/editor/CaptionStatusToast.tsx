@@ -30,10 +30,8 @@ const stageStyles: Record<
 };
 
 export function CaptionStatusToast() {
-	const { captionStatus, setCaptionStatus } = useEditorStore((state) => ({
-		captionStatus: state.captionStatus,
-		setCaptionStatus: state.setCaptionStatus,
-	}));
+	const captionStatus = useEditorStore((state) => state.captionStatus);
+	const setCaptionStatus = useEditorStore((state) => state.setCaptionStatus);
 
 	useEffect(() => {
 		if (captionStatus.stage === "success") {
